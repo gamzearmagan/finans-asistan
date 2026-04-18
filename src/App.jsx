@@ -148,19 +148,24 @@ export default function App() {
 
   // ── AI çağrısı ───────────────────────────────────────────────────────────
   async function callAI(prompt) {
-    if (!apiKey) { alert("Lütfen Anthropic API key'inizi girin."); return; }
+    if (!apiKey) { alert("Lütfen Gemini API key'inizi girin."); return; }
     setAiLoading(true);
     setAiText("");
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-allow-browser": "true" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
-      });
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          }),
+        }
+      );
       const data = await res.json();
-      setAiText(data.content?.map((b) => b.text || "").join("") || "Yanıt alınamadı.");
+      setAiText(data.candidates?.[0]?.content?.parts?.[0]?.text || "Yanıt alınamadı.");
     } catch {
-      setAiText("Bağlantı hatası. API key'i ve internet bağlantısını kontrol edin.");
+      setAiText("Bağlantı hatası. API key'i kontrol edin.");
     }
     setAiLoading(false);
   }
@@ -358,9 +363,9 @@ export default function App() {
             <div style={{ border: "1px solid #e0e0e0", borderRadius: 10, padding: "16px", marginBottom: 16, background: "#fafafa" }}>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Anthropic API Key</div>
               <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
-                <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: "#3266ad" }}>console.anthropic.com</a>'dan ücretsiz alabilirsiniz. Key bu tarayıcı sekmesinde kalır, hiçbir yere gönderilmez.
+                <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" style={{ color: "#3266ad" }}>aistudio.google.com</a>'dan ücretsiz alabilirsiniz. Key bu tarayıcı sekmesinde kalır, hiçbir yere gönderilmez.
               </div>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-ant-..." style={{ width: "100%", padding: "8px 12px", border: "1px solid #e0e0e0", borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
+              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIza..." style={{ width: "100%", padding: "8px 12px", border: "1px solid #e0e0e0", borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
             </div>
 
             {/* AI sonucu */}
