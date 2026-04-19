@@ -327,16 +327,32 @@ export default function App() {
     localStorage.removeItem("finans_files");
   }
 
+  // ── Tarih normalize ──────────────────────────────────────────────────────
+  const getMonth = (dateStr) => {
+    const d = String(dateStr);
+    if (d.includes("-")) {
+      const p = d.split("-");
+      if (p[0].length === 4) return p[0] + "-" + p[1];
+      if (p[2]?.length === 4) return p[2] + "-" + p[1].padStart(2, "0");
+    }
+    if (d.includes("/")) {
+      const p = d.split("/");
+      if (p[2]?.length === 4) return p[2] + "-" + p[1].padStart(2, "0");
+      if (p[0]?.length === 4) return p[0] + "-" + p[1].padStart(2, "0");
+    }
+    return d.slice(0, 7);
+  };
+
   // ── Analiz verileri ─────────────────────────────────────────────────────
   const total = tx.reduce((s, t) => s + t.amount, 0);
   const catMap = {};
   tx.forEach((t) => { catMap[t.cat] = (catMap[t.cat] || 0) + t.amount; });
   const catEntries = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
-  const months = [...new Set(tx.map((t) => t.date.slice(0, 7)))].sort();
+  const months = [...new Set(tx.map((t) => getMonth(t.date)))].sort();
   const currM = months[months.length - 1] || "";
   const prevM = months.length > 1 ? months[months.length - 2] : null;
-  const currTotal = tx.filter((t) => t.date.startsWith(currM)).reduce((s, t) => s + t.amount, 0);
-  const prevTotal = prevM ? tx.filter((t) => t.date.startsWith(prevM)).reduce((s, t) => s + t.amount, 0) : null;
+  const currTotal = tx.filter((t) => getMonth(t.date) === currM).reduce((s, t) => s + t.amount, 0);
+  const prevTotal = prevM ? tx.filter((t) => getMonth(t.date) === prevM).reduce((s, t) => s + t.amount, 0) : null;
   const change = prevTotal ? ((currTotal - prevTotal) / prevTotal) * 100 : 0;
   const MN = ["Oca","Şub","Mar","Nis","May","Haz","Tem","Ağu","Eyl","Eki","Kas","Ara"];
 
@@ -531,7 +547,7 @@ export default function App() {
                 <div style={{ fontSize: 12, color: "#aaa", fontWeight: 500, marginBottom: 10, textTransform: "uppercase", letterSpacing: ".04em" }}>Aylık trend</div>
                 <div style={{ height: 232 }}>
                   <Bar
-                    data={{ labels: months.map((m) => { const [y, mo] = m.split("-"); return MN[parseInt(mo) - 1] + " '" + y.slice(2); }), datasets: [{ data: months.map((m) => Math.round(tx.filter((t) => t.date.startsWith(m)).reduce((s, t) => s + t.amount, 0))), backgroundColor: "#3266ad", borderRadius: 4 }] }}
+                    data={{ labels: months.map((m) => { const [y, mo] = m.split("-"); return MN[parseInt(mo) - 1] + " '" + y.slice(2); }), datasets: [{ data: months.map((m) => Math.round(tx.filter((t) => getMonth(t.date) === m).reduce((s, t) => s + t.amount, 0))), backgroundColor: "#3266ad", borderRadius: 4 }] }}
                     options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: (v) => v.toLocaleString("tr-TR") + "₺" } }, x: { ticks: { autoSkip: false } } } }}
                   />
                 </div>
