@@ -16,7 +16,7 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 // ── Varsayılan kategoriler ──────────────────────────────────────────────────
 const DEFAULT_CATS = [
   { id: 1, name: "Market / Süpermarket", color: "#1a7a4a", keywords: [
-    "migros","bim","a101","carrefour","şok","file","macro","kipa","hakmar","metro","sok","bizim toptan","tarım kredi",
+    "migros","bim","a101","carrefour","şok","file","macro","kipa","hakmar","sok","bizim toptan","tarım kredi",
     "market","süpermarket","manav","kasap","bakkal","kuruyemiş","şarküteri","hipermarket","alışveriş merkezi",
   ]},
   { id: 2, name: "Yemek & Restoran", color: "#e07b00", keywords: [
@@ -26,8 +26,10 @@ const DEFAULT_CATS = [
   ]},
   { id: 3, name: "Ulaşım", color: "#3266ad", keywords: [
     "uber","careem","bitaksi","martı","bolt","thy","pegasus","sunexpress","anadolujet","havas",
-    "taksi","otobüs","metrobüs","tramvay","vapur","feribot","uçak","tren","otogar","iskele","akbil",
-    "istanbul kart","istanbulkart","kart yükleme","dolmuş","minibüs","servis","transfer","rent a car","araç kiralama",
+    "bdo","otobüs işletmeleri","kamil koç","metro turizm","pamukkale","ulusoy","flixbus",
+    "taksi","metrobüs","tramvay","vapur","feribot","otogar","dolmuş","servis arac kiralama",
+    "rent a car","otobüs bileti","uçak bileti","tren bileti",
+    "istanbul kart","istanbulkart","akbil yükleme","hgs","ogs",
   ]},
   { id: 4, name: "Fatura & Abonelik", color: "#9b3ab5", keywords: [
     "netflix","spotify","youtube","apple","google","microsoft","amazon","exxen","blutv","gain","tabii","tod","tivibu",
@@ -93,7 +95,12 @@ const DEMO = [
 
 // ── Yardımcı fonksiyonlar ───────────────────────────────────────────────────
 function categorize(desc, cats) {
-  const d = desc.toLowerCase();
+  // iyzico öneki ve taksit ifadesini temizle, asıl merchant'a göre kategorize et
+  const cleaned = desc
+    .replace(/\d+[\.,]?\d*\s*tl'?lik işlemin \d+\/\d+ taksidi/gi, "")
+    .replace(/iyzico\s*/gi, "")
+    .trim();
+  const d = (cleaned || desc).toLowerCase();
   for (const cat of cats) {
     if (cat.name === "Diğer") continue;
     if (cat.keywords.some((k) => k && d.includes(k.toLowerCase()))) return cat.name;
