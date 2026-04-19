@@ -80,7 +80,7 @@ export default function App() {
   const [cats, setCats] = useState(JSON.parse(JSON.stringify(DEFAULT_CATS)));
   const [rawTx, setRawTx] = useState([]);
   const [tx, setTx] = useState([]);
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey] = useState(import.meta.env.VITE_GEMINI_KEY || "");
   const [aiText, setAiText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [filter, setFilter] = useState("");
@@ -153,7 +153,7 @@ export default function App() {
     setAiText("");
     try {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -163,9 +163,13 @@ export default function App() {
         }
       );
       const data = await res.json();
-      setAiText(data.candidates?.[0]?.content?.parts?.[0]?.text || "Yanıt alınamadı.");
-    } catch {
-      setAiText("Bağlantı hatası. API key'i kontrol edin.");
+      if (!res.ok) {
+        setAiText(`Hata (${res.status}): ${data.error?.message || JSON.stringify(data)}`);
+      } else {
+        setAiText(data.candidates?.[0]?.content?.parts?.[0]?.text || "Yanıt alınamadı.");
+      }
+    } catch (e) {
+      setAiText("Bağlantı hatası: " + e.message);
     }
     setAiLoading(false);
   }
@@ -359,15 +363,6 @@ export default function App() {
           <div style={{ textAlign: "center", padding: "48px", color: "#aaa" }}>Önce veri yükleyin.</div>
         ) : (
           <div>
-            {/* API Key girişi */}
-            <div style={{ border: "1px solid #e0e0e0", borderRadius: 10, padding: "16px", marginBottom: 16, background: "#fafafa" }}>
-              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Anthropic API Key</div>
-              <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
-                <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" style={{ color: "#3266ad" }}>aistudio.google.com</a>'dan ücretsiz alabilirsiniz. Key bu tarayıcı sekmesinde kalır, hiçbir yere gönderilmez.
-              </div>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIza..." style={{ width: "100%", padding: "8px 12px", border: "1px solid #e0e0e0", borderRadius: 8, fontSize: 13, boxSizing: "border-box" }} />
-            </div>
-
             {/* AI sonucu */}
             <div style={{ border: "1px solid #eee", borderRadius: 12, padding: "20px", marginBottom: 16, minHeight: 80 }}>
               {aiLoading ? (
