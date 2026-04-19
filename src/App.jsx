@@ -98,16 +98,52 @@ const DEMO = [
 
 // ── Yardımcı fonksiyonlar ───────────────────────────────────────────────────
 function categorize(desc, cats) {
-  // iyzico öneki ve taksit ifadesini temizle, asıl merchant'a göre kategorize et
-  const cleaned = desc
-    .replace(/\d+[\.,]?\d*\s*tl'?lik işlemin \d+\/\d+ taksidi/gi, "")
-    .replace(/iyzico\s*/gi, "")
-    .trim();
-  const d = (cleaned || desc).toLowerCase();
+  let d = String(desc).toLowerCase();
+  d = d.replace(/^iyzico\s*/i, "");
+  d = d.replace(/[\d\.,]+\s*tl'?lik işlemin \d+\/\d+ taksidi/gi, "");
+  d = d.replace(/\b(istanbul|ankara|izmir|turkey|turkiye)\s*(tr)?\b/gi, "");
+  d = d.trim();
+
+  const norm = s => s
+    .replace(/İ/g,"i").replace(/ı/g,"i")
+    .replace(/ö/g,"o").replace(/ü/g,"u")
+    .replace(/ş/g,"s").replace(/ğ/g,"g")
+    .replace(/ç/g,"c");
+  const dn = norm(d);
+
+  const marketBrands  = ["migros","bim","a101","carrefour","sok","file","macro","kipa","hakmar","metro market","bizim toptan","tarim kredi"];
+  const marketGeneric = ["market","supermarket","manav","kasap","bakkal","kuruyemis","sarkuteri","hipermarket"];
+  if ([...marketBrands,...marketGeneric].some(k => dn.includes(norm(k)))) return "Market / Süpermarket";
+
+  const yemekBrands  = ["mcdonalds","burger king","kfc","dominos","pizza hut","popeyes","subway","starbucks","caribou","gloria jeans","dunkin","simit sarayi","turkish airlines dining"];
+  const yemekGeneric = ["restoran","cafe","kafeterya","yemek","kebap","kofte","doner","pide","lahmacun","iskender","cigkofte","tantuni","izgara","mangal","pizza","burger","tavuk","balik","lokanta","bufe","pastane","firin","borek","kokorec","durum","corba","kahvalti","brunch","bistro"];
+  if ([...yemekBrands,...yemekGeneric].some(k => dn.includes(norm(k)))) return "Yemek & Restoran";
+
+  const saglikBrands  = ["medical park","acibadem","memorial","liv hospital","duz eczane","eczane"];
+  const saglikGeneric = ["hastane","klinik","poliklinik","medikal","optik","gozluk","dis ","laboratuvar","tahlil","rontgen","muayene","doktor","fizyoterapi","veteriner","ilac","vitamin","takviye","saglik"];
+  if ([...saglikBrands,...saglikGeneric].some(k => dn.includes(norm(k)))) return "Sağlık";
+
+  const faturaBrands  = ["netflix","spotify","youtube premium","apple.com","apple subscr","icloud","amazon prime","exxen","blutv","gain tv","tabii","tod ","tivibu","bein","deezer","youtube music"];
+  const faturaFatura  = ["turkcell fatura","vodafone fatura","turk telekom","superonline","ttnet","elektrik","dogalgaz","su faturasi","internet fatura","dask","kasko fatura","sigorta fatura","bireysel emeklilik","bes "];
+  if ([...faturaBrands,...faturaFatura].some(k => dn.includes(norm(k)))) return "Fatura & Abonelik";
+
+  const ulasimBrands  = ["uber","careem","bitaksi","marti","bolt","thy ","pegasus","sunexpress","anadolujet","havas","kamil koc","metro turizm","pamukkale","ulusoy","flixbus"];
+  const ulasimGeneric = ["taksi","metrobus","tramvay","vapur","feribot","otogar","dolmus","rent a car","arac kiralama","otobus bileti","ucak bileti","tren bileti","istanbulkart","akbil","hgs ","ogs "];
+  if ([...ulasimBrands,...ulasimGeneric].some(k => dn.includes(norm(k)))) return "Ulaşım";
+
+  const giyimBrands  = ["zara","h&m","hm ","koton","lcw","mango","vakko","beymen","nike","adidas","puma","reebok","mavi","lee","wrangler","trendyol","hepsiburada","amazon","n11","gittigidiyor","apple store","mediamarkt","teknosa","vatan","bimeks","oysho","bershka","pull bear","stradivarius","massimo dutti","defacto","ipekyol","network","twist"];
+  const giyimGeneric = ["giyim","tekstil","konfeksiyon","butik","moda","ayakkabi","canta","aksesuar","taki","kiyafet","elbise","pantolon","gomlek","mont","ceket","ic giyim","spor giyim"];
+  if ([...giyimBrands,...giyimGeneric].some(k => dn.includes(norm(k)))) return "Giyim & Alışveriş";
+
+  const eglenceBrands  = ["cinemaximum","cineplex","biletix","passo","steam","playstation"];
+  const eglenceGeneric = ["sinema","tiyatro","konser","muze","sergi","eglence","oyun","spor kulub","fitness","gym","yuzme","bowling","kitap","muzik aleti","hobi"];
+  if ([...eglenceBrands,...eglenceGeneric].some(k => dn.includes(norm(k)))) return "Eğlence & Kültür";
+
   for (const cat of cats) {
     if (cat.name === "Diğer") continue;
-    if (cat.keywords.some((k) => k && d.includes(k.toLowerCase()))) return cat.name;
+    if (cat.keywords.some(k => k && dn.includes(norm(k.toLowerCase())))) return cat.name;
   }
+
   return "Diğer";
 }
 
