@@ -111,20 +111,52 @@ const DESC_KW = ["açıklama", "description", "işlem", "işyeri", "merchant", "
 const AMT_KW  = ["tutar", "amount", "borç", "alacak", "miktar", "işlem tutarı", "para"];
 
 function detectColumns(rows) {
-  for (let i = 0; i < Math.min(10, rows.length); i++) {
+  for (let i = 0; i < Math.min(20, rows.length); i++) {
     const row = rows[i];
     if (!row) continue;
     const cells = row.map((c) => String(c || "").toLowerCase().trim());
-    let dateCol = -1, descCol = -1, amtCol = -1;
+    let dateCol = -1, descCol = -1, amtCol = -1, sektorCol = -1;
     cells.forEach((cell, idx) => {
-      if (dateCol === -1 && DATE_KW.some((k) => cell.includes(k))) dateCol = idx;
-      if (descCol === -1 && DESC_KW.some((k) => cell.includes(k))) descCol = idx;
-      if (amtCol  === -1 && AMT_KW.some((k)  => cell.includes(k))) amtCol  = idx;
+      if (dateCol   === -1 && DATE_KW.some((k) => cell.includes(k))) dateCol   = idx;
+      if (descCol   === -1 && DESC_KW.some((k) => cell.includes(k))) descCol   = idx;
+      if (amtCol    === -1 && AMT_KW.some((k)  => cell.includes(k))) amtCol    = idx;
+      if (sektorCol === -1 && cell.includes("sektör"))               sektorCol = idx;
     });
     const found = [dateCol, descCol, amtCol].filter((x) => x !== -1).length;
-    if (found >= 2) return { headerIdx: i, dateCol, descCol, amtCol };
+    if (found >= 2) return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
   }
-  return { headerIdx: 0, dateCol: 0, descCol: 1, amtCol: 2 };
+  return { headerIdx: 0, dateCol: 0, descCol: 1, amtCol: 2, sektorCol: -1 };
+}
+
+// ── Tutar temizleme: "+1.075,39 TL" veya "-320,00 TL" → 1075.39 / 320.00 ───
+function parseTutar(val) {
+  const s = String(val || "").replace(/TL/gi, "").replace(/\+/g, "").trim();
+  const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  return isNaN(n) || n === 0 ? null : Math.abs(n);
+}
+
+const PAYMENT_KW = ["ödeme", "bankacılığı", "havale", "eft", "transfer",
+  "önceki dönem", "minimum tutar", "hesap özeti", "kredi karti ödemesi"];
+const REFUND_KW  = ["iade", "refund", "return", "iptal"];
+
+// ── Sektöre göre kategori eşleme ────────────────────────────────────────────
+const SEKTOR_MAP = [
+  { key: "market",     cat: "Market / Süpermarket" },
+  { key: "yemek",      cat: "Yemek & Restoran"     },
+  { key: "restoran",   cat: "Yemek & Restoran"     },
+  { key: "ulaşım",     cat: "Ulaşım"               },
+  { key: "elektronik", cat: "Fatura & Abonelik"    },
+  { key: "bilgisayar", cat: "Fatura & Abonelik"    },
+];
+
+function smartCategorize(desc, sektor, cats, refund) {
+  if (refund) return "İade";
+  if (sektor) {
+    const s = sektor.toLowerCase();
+    const match = SEKTOR_MAP.find(({ key }) => s.includes(key));
+    if (match) return match.cat;
+  }
+  return categorize(desc, cats);
 }
 
 // ── Ana bileşen ─────────────────────────────────────────────────────────────
@@ -142,12 +174,12 @@ export default function App() {
 
   // Kategori değişince yeniden sınıflandır
   useEffect(() => {
-    if (rawTx.length) setTx(rawTx.map((t) => ({ ...t, cat: categorize(t.desc, cats) })));
+    if (rawTx.length) setTx(rawTx.map((t) => ({ ...t, cat: smartCategorize(t.desc, t.sektor, cats, t.refund) })));
   }, [cats, rawTx]);
 
   function loadData(rows) {
     setRawTx(rows);
-    setTx(rows.map((t) => ({ ...t, cat: categorize(t.desc, cats) })));
+    setTx(rows.map((t) => ({ ...t, cat: smartCategorize(t.desc, t.sektor, cats, t.refund) })));
     setTab("analysis");
   }
 
@@ -158,15 +190,18 @@ export default function App() {
       const wb = XLSX.read(buf);
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-      const { headerIdx, dateCol, descCol, amtCol } = detectColumns(rows);
+      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = detectColumns(rows);
       const parsed = [];
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const r = rows[i];
         if (!r) continue;
         const desc = String(r[descCol] || "").trim();
-        const amount = Math.abs(parseFloat(String(r[amtCol] || "").replace(",", ".")));
-        if (desc && !isNaN(amount) && amount > 0)
-          parsed.push({ date: String(r[dateCol] || ""), desc, amount });
+        const amount = parseTutar(r[amtCol]);
+        if (!desc || amount === null) continue;
+        const cleanDesc = desc.toLowerCase();
+        if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
+        const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
+        parsed.push({ date: String(r[dateCol] || ""), desc, amount, sektor: sektorCol >= 0 ? String(r[sektorCol] || "") : "", refund: isRefund });
       }
       if (parsed.length) loadData(parsed);
       else alert("Dosya okunamadı. Sütun sırası: Tarih, Açıklama, Tutar olmalı.");
@@ -174,15 +209,18 @@ export default function App() {
       const text = await file.text();
       const lines = text.trim().split("\n").filter(Boolean);
       const rawRows = lines.map((l) => l.split(/[,;\t]/).map((c) => c.replace(/"/g, "").trim()));
-      const { headerIdx, dateCol, descCol, amtCol } = detectColumns(rawRows);
+      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = detectColumns(rawRows);
       const parsed = [];
       for (let i = headerIdx + 1; i < rawRows.length; i++) {
         const cols = rawRows[i];
         if (cols.length < 3) continue;
         const desc = cols[descCol] || "";
-        const amount = Math.abs(parseFloat((cols[amtCol] || "").replace(/[^\d.,-]/g, "").replace(",", ".")));
-        if (desc && !isNaN(amount) && amount > 0)
-          parsed.push({ date: cols[dateCol] || "", desc, amount });
+        const amount = parseTutar(cols[amtCol]);
+        if (!desc || amount === null) continue;
+        const cleanDesc = desc.toLowerCase();
+        if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
+        const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
+        parsed.push({ date: cols[dateCol] || "", desc, amount, sektor: sektorCol >= 0 ? (cols[sektorCol] || "") : "", refund: isRefund });
       }
       if (parsed.length) loadData(parsed);
       else alert("CSV okunamadı.");
