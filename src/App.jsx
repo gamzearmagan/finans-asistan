@@ -162,8 +162,18 @@ function smartCategorize(desc, sektor, cats, refund) {
 // ── Ana bileşen ─────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("upload");
-  const [cats, setCats] = useState(JSON.parse(JSON.stringify(DEFAULT_CATS)));
-  const [rawTx, setRawTx] = useState([]);
+  const [cats, setCats] = useState(() => {
+    try { const s = localStorage.getItem("finans_cats"); return s ? JSON.parse(s) : JSON.parse(JSON.stringify(DEFAULT_CATS)); }
+    catch { return JSON.parse(JSON.stringify(DEFAULT_CATS)); }
+  });
+  const [rawTx, setRawTx] = useState(() => {
+    try { const s = localStorage.getItem("finans_tx"); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
+  const [loadedFiles, setLoadedFiles] = useState(() => {
+    try { const s = localStorage.getItem("finans_files"); return s ? JSON.parse(s) : []; }
+    catch { return []; }
+  });
   const [tx, setTx] = useState([]);
   const [apiKey] = useState(import.meta.env.VITE_GEMINI_KEY || "");
   const [aiText, setAiText] = useState("");
@@ -172,19 +182,27 @@ export default function App() {
   const [drag, setDrag] = useState(false);
   const fileRef = useRef();
 
-  // Kategori değişince yeniden sınıflandır
+  // Kategori veya rawTx değişince yeniden sınıflandır + localStorage'a yaz
   useEffect(() => {
     if (rawTx.length) setTx(rawTx.map((t) => ({ ...t, cat: smartCategorize(t.desc, t.sektor, cats, t.refund) })));
+    else setTx([]);
+    localStorage.setItem("finans_tx", JSON.stringify(rawTx));
   }, [cats, rawTx]);
 
-  function loadData(rows) {
-    setRawTx(rows);
-    setTx(rows.map((t) => ({ ...t, cat: smartCategorize(t.desc, t.sektor, cats, t.refund) })));
+  useEffect(() => { localStorage.setItem("finans_cats",  JSON.stringify(cats));        }, [cats]);
+  useEffect(() => { localStorage.setItem("finans_files", JSON.stringify(loadedFiles)); }, [loadedFiles]);
+
+  // Demo yükle
+  function loadData(rows, fileName = "Demo Verisi") {
+    const withMeta = rows.map((r) => ({ sektor: "", refund: false, ...r, fileName }));
+    const dates = withMeta.map((r) => r.date).filter(Boolean).sort();
+    setRawTx(withMeta);
+    setLoadedFiles([{ name: fileName, count: withMeta.length, dateFrom: dates[0] || "", dateTo: dates[dates.length - 1] || "" }]);
     setTab("analysis");
   }
 
-  async function handleFile(file) {
-    if (!file) return;
+  // Tek dosya parse et — rows döner
+  async function parseFileRows(file) {
     if (file.name.match(/\.xlsx?$/i)) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf);
@@ -203,8 +221,7 @@ export default function App() {
         const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
         parsed.push({ date: String(r[dateCol] || ""), desc, amount, sektor: sektorCol >= 0 ? String(r[sektorCol] || "") : "", refund: isRefund });
       }
-      if (parsed.length) loadData(parsed);
-      else alert("Dosya okunamadı. Sütun sırası: Tarih, Açıklama, Tutar olmalı.");
+      return parsed;
     } else {
       const text = await file.text();
       const lines = text.trim().split("\n").filter(Boolean);
@@ -222,9 +239,37 @@ export default function App() {
         const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
         parsed.push({ date: cols[dateCol] || "", desc, amount, sektor: sektorCol >= 0 ? (cols[sektorCol] || "") : "", refund: isRefund });
       }
-      if (parsed.length) loadData(parsed);
-      else alert("CSV okunamadı.");
+      return parsed;
     }
+  }
+
+  // Çoklu dosya yükle
+  async function handleFiles(files) {
+    for (const file of Array.from(files)) {
+      if (loadedFiles.some((f) => f.name === file.name)) {
+        alert(`"${file.name}" zaten yüklendi.`);
+        continue;
+      }
+      const rows = await parseFileRows(file);
+      if (!rows.length) { alert(`"${file.name}" okunamadı. Sütun sırası: Tarih, Açıklama, Tutar olmalı.`); continue; }
+      const dates = rows.map((r) => r.date).filter(Boolean).sort();
+      setRawTx((prev) => [...prev, ...rows.map((r) => ({ ...r, fileName: file.name }))]);
+      setLoadedFiles((prev) => [...prev, { name: file.name, count: rows.length, dateFrom: dates[0] || "", dateTo: dates[dates.length - 1] || "" }]);
+      setTab("analysis");
+    }
+  }
+
+  function removeFile(fileName) {
+    setRawTx((prev) => prev.filter((t) => t.fileName !== fileName));
+    setLoadedFiles((prev) => prev.filter((f) => f.name !== fileName));
+  }
+
+  function clearAll() {
+    setRawTx([]);
+    setLoadedFiles([]);
+    setTx([]);
+    localStorage.removeItem("finans_tx");
+    localStorage.removeItem("finans_files");
   }
 
   // ── Analiz verileri ─────────────────────────────────────────────────────
@@ -304,20 +349,43 @@ export default function App() {
           <div
             onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
             onDragLeave={() => setDrag(false)}
-            onDrop={(e) => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
+            onDrop={(e) => { e.preventDefault(); setDrag(false); handleFiles(e.dataTransfer.files); }}
             onClick={() => fileRef.current.click()}
             style={{ border: `2px dashed ${drag ? "#3266ad" : "#ccc"}`, borderRadius: 12, padding: "48px 24px", textAlign: "center", cursor: "pointer", background: drag ? "#f0f6ff" : "#fafafa" }}
           >
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="1.5" style={{ margin: "0 auto 12px", display: "block" }}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <div style={{ fontSize: 15, color: "#555", marginBottom: 4 }}>Excel veya CSV ekstreyi buraya sürükleyin</div>
-            <div style={{ fontSize: 12, color: "#aaa" }}>.xlsx · .xls · .csv — Sütun sırası: Tarih, Açıklama, Tutar</div>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => handleFile(e.target.files[0])} />
+            <div style={{ fontSize: 12, color: "#aaa" }}>.xlsx · .xls · .csv — Birden fazla dosya seçebilirsiniz</div>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
           </div>
-          <div style={{ textAlign: "center", marginTop: 12 }}>
+
+          <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 12 }}>
             <button onClick={() => loadData(DEMO)} style={{ padding: "7px 16px", border: "1px solid #ddd", borderRadius: 8, fontSize: 13, color: "#666", cursor: "pointer", background: "#fff" }}>
               Demo veri ile dene
             </button>
+            {loadedFiles.length > 0 && (
+              <button onClick={clearAll} style={{ padding: "7px 16px", border: "1px solid #f5c6c6", borderRadius: 8, fontSize: 13, color: "#c0392b", cursor: "pointer", background: "#fff" }}>
+                Tüm verileri temizle
+              </button>
+            )}
           </div>
+
+          {loadedFiles.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <div style={{ fontSize: 12, color: "#aaa", fontWeight: 500, textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 }}>
+                Yüklenen dosyalar — {loadedFiles.length} dosya · {rawTx.length} işlem
+              </div>
+              {loadedFiles.map((f) => (
+                <div key={f.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", border: "1px solid #eee", borderRadius: 8, marginBottom: 6, background: "#fafafa" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2, overflow: "hidden" }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</div>
+                    <div style={{ fontSize: 11, color: "#aaa" }}>{f.count} işlem{f.dateFrom ? ` · ${f.dateFrom} – ${f.dateTo}` : ""}</div>
+                  </div>
+                  <button onClick={() => removeFile(f.name)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 18, color: "#ccc", marginLeft: 12, flexShrink: 0 }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
