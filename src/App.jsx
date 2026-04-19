@@ -106,15 +106,18 @@ function getColor(name, cats) {
 }
 
 // ── Akıllı header dedektörü ─────────────────────────────────────────────────
-const DATE_KW = ["tarih", "date", "işlem tarihi", "tarih/saat", "valör"];
-const DESC_KW = ["açıklama", "description", "işlem", "işyeri", "merchant", "karşı taraf", "alıcı", "gönderici", "detay"];
-const AMT_KW  = ["tutar", "amount", "borç", "alacak", "miktar", "işlem tutarı", "para"];
+const DATE_KW   = ["tarih", "date", "işlem tarihi", "tarih/saat", "valör"];
+const DESC_KW   = ["açıklama", "description", "işlem", "işyeri", "merchant", "karşı taraf", "alıcı", "gönderici", "detay"];
+const AMT_KW    = ["tutar", "amount", "borç", "alacak", "miktar", "işlem tutarı", "para"];
+const HDR_TRIGGER = ["işlem tarihi", "işlemler", "sektör", "tarih", "date", "açıklama", "tutar", "amount", "borç", "alacak"];
 
 function detectColumns(rows) {
-  for (let i = 0; i < Math.min(20, rows.length); i++) {
+  for (let i = 0; i < Math.min(25, rows.length); i++) {
     const row = rows[i];
     if (!row) continue;
     const cells = row.map((c) => String(c || "").toLowerCase().trim());
+    // Satırda herhangi bir header kelimesi varsa bu satırı header kabul et
+    if (!cells.some((cell) => HDR_TRIGGER.some((k) => cell.includes(k)))) continue;
     let dateCol = -1, descCol = -1, amtCol = -1, sektorCol = -1;
     cells.forEach((cell, idx) => {
       if (dateCol   === -1 && DATE_KW.some((k) => cell.includes(k))) dateCol   = idx;
@@ -122,16 +125,20 @@ function detectColumns(rows) {
       if (amtCol    === -1 && AMT_KW.some((k)  => cell.includes(k))) amtCol    = idx;
       if (sektorCol === -1 && cell.includes("sektör"))               sektorCol = idx;
     });
-    const found = [dateCol, descCol, amtCol].filter((x) => x !== -1).length;
-    if (found >= 2) return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
+    return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
   }
-  return { headerIdx: 0, dateCol: 0, descCol: 1, amtCol: 2, sektorCol: -1 };
+  return null; // header bulunamadı
 }
 
-// ── Tutar temizleme: "+1.075,39 TL" veya "-320,00 TL" → 1075.39 / 320.00 ───
+// ── Tutar temizleme: "+1.075,39 TL" → 1075.39 ──────────────────────────────
 function parseTutar(val) {
-  const s = String(val || "").replace(/TL/gi, "").replace(/\+/g, "").trim();
-  const n = parseFloat(s.replace(/\./g, "").replace(",", "."));
+  const s = String(val || "")
+    .replace(/TL/gi, "")
+    .replace(/\s/g, "")
+    .replace(/\+/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  const n = parseFloat(s);
   return isNaN(n) || n === 0 ? null : Math.abs(n);
 }
 
@@ -205,10 +212,16 @@ export default function App() {
   async function parseFileRows(file) {
     if (file.name.match(/\.xlsx?$/i)) {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf);
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = detectColumns(rows);
+      const colResult = detectColumns(rows);
+      if (!colResult) {
+        console.log("Header bulunamadı, ilk 25 satır:", rows.slice(0, 25));
+        alert("Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
+        return [];
+      }
+      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = colResult;
       const parsed = [];
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const r = rows[i];
@@ -226,7 +239,13 @@ export default function App() {
       const text = await file.text();
       const lines = text.trim().split("\n").filter(Boolean);
       const rawRows = lines.map((l) => l.split(/[,;\t]/).map((c) => c.replace(/"/g, "").trim()));
-      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = detectColumns(rawRows);
+      const csvResult = detectColumns(rawRows);
+      if (!csvResult) {
+        console.log("Header bulunamadı, ilk 25 satır:", rawRows.slice(0, 25));
+        alert("Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
+        return [];
+      }
+      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = csvResult;
       const parsed = [];
       for (let i = headerIdx + 1; i < rawRows.length; i++) {
         const cols = rawRows[i];
