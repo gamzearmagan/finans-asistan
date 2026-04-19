@@ -15,14 +15,45 @@ ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarEle
 
 // ── Varsayılan kategoriler ──────────────────────────────────────────────────
 const DEFAULT_CATS = [
-  { id: 1, name: "Market / Süpermarket", color: "#1a7a4a", keywords: ["migros","bim","a101","carrefour","şok","market","süpermarket","metro"] },
-  { id: 2, name: "Yemek & Restoran",     color: "#e07b00", keywords: ["restoran","burger","döner","pizza","cafe","kahve","yemek","köfte","mangal"] },
-  { id: 3, name: "Ulaşım",               color: "#3266ad", keywords: ["uber","taksi","metrobüs","istanbul kart","istanbulkart","dolmuş"] },
-  { id: 4, name: "Fatura & Abonelik",    color: "#9b3ab5", keywords: ["netflix","spotify","türk telekom","vodafone","turkcell","internet","elektrik","doğalgaz","fatura"] },
-  { id: 5, name: "Giyim & Alışveriş",   color: "#c0392b", keywords: ["zara","h&m","koton","lcw","mango","giyim","kıyafet","ayakkabı","trendyol"] },
-  { id: 6, name: "Sağlık",               color: "#0891b2", keywords: ["eczane","hastane","doktor","klinik","muayene","ilaç","sağlık"] },
-  { id: 7, name: "Eğlence & Kültür",    color: "#d97706", keywords: ["sinema","konser","tiyatro","müze","spor","fitness","gym"] },
-  { id: 8, name: "Diğer",               color: "#888780", keywords: [] },
+  { id: 1, name: "Market / Süpermarket", color: "#1a7a4a", keywords: [
+    "migros","bim","a101","carrefour","şok","file","macro","kipa","hakmar","metro","sok","bizim toptan","tarım kredi",
+    "market","süpermarket","manav","kasap","bakkal","kuruyemiş","şarküteri","hipermarket","alışveriş merkezi",
+  ]},
+  { id: 2, name: "Yemek & Restoran", color: "#e07b00", keywords: [
+    "mcdonalds","burger king","kfc","dominos","pizza hut","popeyes","subway","starbucks","caribou","gloria jeans","dunkin","simit sarayi",
+    "restoran","cafe","kafeterya","yemek","kebap","köfte","döner","pide","lahmacun","iskender","çiğköfte","tantuni","izgara","mangal",
+    "pizza","burger","tavuk","balık","lokanta","büfe","pastane","fırın","börek","kokoreç","dürüm","çorba","kahvaltı","brunch","kahve",
+  ]},
+  { id: 3, name: "Ulaşım", color: "#3266ad", keywords: [
+    "uber","careem","bitaksi","martı","bolt","thy","pegasus","sunexpress","anadolujet","havas",
+    "taksi","otobüs","metrobüs","tramvay","vapur","feribot","uçak","tren","otogar","iskele","akbil",
+    "istanbul kart","istanbulkart","kart yükleme","dolmuş","minibüs","servis","transfer","rent a car","araç kiralama",
+  ]},
+  { id: 4, name: "Fatura & Abonelik", color: "#9b3ab5", keywords: [
+    "netflix","spotify","youtube","apple","google","microsoft","amazon","exxen","blutv","gain","tabii","tod","tivibu",
+    "turkcell","vodafone","türk telekom","superonline","ttnet","bein",
+    "fatura","abonelik","aidat","elektrik","doğalgaz","su fatura","internet","telefon","kira","sigorta",
+    "vergi","kasko","trafik sigortası","dask","bireysel emeklilik","bes","taksit",
+  ]},
+  { id: 5, name: "Giyim & Alışveriş", color: "#c0392b", keywords: [
+    "zara","h&m","hm","koton","lcw","mango","vakko","beymen","nike","adidas","puma","reebok","columbia","mavi","lee","wrangler","trendyol","hepsiburada",
+    "giyim","tekstil","konfeksiyon","butik","moda","ayakkabı","çanta","aksesuar","takı","kıyafet","elbise","pantolon","gömlek",
+    "mont","ceket","spor giyim","iç giyim","çocuk giyim",
+  ]},
+  { id: 6, name: "Sağlık", color: "#0891b2", keywords: [
+    "eczane","medical park","acibadem","memorial","liv hospital",
+    "hastane","klinik","poliklinik","medikal","optik","gözlük","diş","laboratuvar","tahlil","röntgen",
+    "muayene","doktor","diyetisyen","fizyoterapi","psikoloji","veteriner","eczacı","ilaç","vitamin","takviye",
+  ]},
+  { id: 7, name: "Eğlence & Kültür", color: "#d97706", keywords: [
+    "cinemaximum","cineplex","biletix","passo","steam","playstation",
+    "sinema","tiyatro","konser","müze","sergi","gezi","eğlence","oyun","spor","fitness","gym",
+    "yüzme","bowling","lunapark","kitap","kırtasiye","müzik aleti","hobi","fotoğraf",
+  ]},
+  { id: 8, name: "Diğer", color: "#888780", keywords: [
+    "güzellik","kuaför","berber","spa","hamam","masaj","kuru temizleme","çamaşırhane",
+    "tamirat","tadilat","mobilya","elektronik","bilgisayar","beyaz eşya","nakliyat",
+  ]},
 ];
 
 const DEMO = [
@@ -74,6 +105,28 @@ function getColor(name, cats) {
   return cats.find((c) => c.name === name)?.color || "#888";
 }
 
+// ── Akıllı header dedektörü ─────────────────────────────────────────────────
+const DATE_KW = ["tarih", "date", "işlem tarihi", "tarih/saat", "valör"];
+const DESC_KW = ["açıklama", "description", "işlem", "işyeri", "merchant", "karşı taraf", "alıcı", "gönderici", "detay"];
+const AMT_KW  = ["tutar", "amount", "borç", "alacak", "miktar", "işlem tutarı", "para"];
+
+function detectColumns(rows) {
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const cells = row.map((c) => String(c || "").toLowerCase().trim());
+    let dateCol = -1, descCol = -1, amtCol = -1;
+    cells.forEach((cell, idx) => {
+      if (dateCol === -1 && DATE_KW.some((k) => cell.includes(k))) dateCol = idx;
+      if (descCol === -1 && DESC_KW.some((k) => cell.includes(k))) descCol = idx;
+      if (amtCol  === -1 && AMT_KW.some((k)  => cell.includes(k))) amtCol  = idx;
+    });
+    const found = [dateCol, descCol, amtCol].filter((x) => x !== -1).length;
+    if (found >= 2) return { headerIdx: i, dateCol, descCol, amtCol };
+  }
+  return { headerIdx: 0, dateCol: 0, descCol: 1, amtCol: 2 };
+}
+
 // ── Ana bileşen ─────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState("upload");
@@ -105,28 +158,31 @@ export default function App() {
       const wb = XLSX.read(buf);
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const { headerIdx, dateCol, descCol, amtCol } = detectColumns(rows);
       const parsed = [];
-      for (let i = 1; i < rows.length; i++) {
+      for (let i = headerIdx + 1; i < rows.length; i++) {
         const r = rows[i];
-        if (!r || r.length < 3) continue;
-        const desc = String(r[1] || "").trim();
-        const amount = Math.abs(parseFloat(String(r[2] || "").replace(",", ".")));
+        if (!r) continue;
+        const desc = String(r[descCol] || "").trim();
+        const amount = Math.abs(parseFloat(String(r[amtCol] || "").replace(",", ".")));
         if (desc && !isNaN(amount) && amount > 0)
-          parsed.push({ date: String(r[0] || ""), desc, amount });
+          parsed.push({ date: String(r[dateCol] || ""), desc, amount });
       }
       if (parsed.length) loadData(parsed);
       else alert("Dosya okunamadı. Sütun sırası: Tarih, Açıklama, Tutar olmalı.");
     } else {
       const text = await file.text();
       const lines = text.trim().split("\n").filter(Boolean);
+      const rawRows = lines.map((l) => l.split(/[,;\t]/).map((c) => c.replace(/"/g, "").trim()));
+      const { headerIdx, dateCol, descCol, amtCol } = detectColumns(rawRows);
       const parsed = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(/[,;	]/);
+      for (let i = headerIdx + 1; i < rawRows.length; i++) {
+        const cols = rawRows[i];
         if (cols.length < 3) continue;
-        const desc = (cols[1] || "").replace(/"/g, "").trim();
-        const amount = Math.abs(parseFloat((cols[2] || "").replace(/[^\d.,-]/g, "").replace(",", ".")));
+        const desc = cols[descCol] || "";
+        const amount = Math.abs(parseFloat((cols[amtCol] || "").replace(/[^\d.,-]/g, "").replace(",", ".")));
         if (desc && !isNaN(amount) && amount > 0)
-          parsed.push({ date: cols[0] || "", desc, amount });
+          parsed.push({ date: cols[dateCol] || "", desc, amount });
       }
       if (parsed.length) loadData(parsed);
       else alert("CSV okunamadı.");
