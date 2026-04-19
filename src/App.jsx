@@ -148,7 +148,7 @@ export default function App() {
 
   // ── AI çağrısı ───────────────────────────────────────────────────────────
   async function callAI(prompt) {
-    if (!apiKey) { alert("Lütfen Gemini API key'inizi girin."); return; }
+    if (!apiKey) { alert("AI şu an kullanılamıyor"); return; }
     setAiLoading(true);
     setAiText("");
     try {
