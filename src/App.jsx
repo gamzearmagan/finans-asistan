@@ -105,46 +105,50 @@ function getColor(name, cats) {
   return cats.find((c) => c.name === name)?.color || "#888";
 }
 
-// ── Akıllı header dedektörü ─────────────────────────────────────────────────
-const DATE_KW   = ["tarih", "date", "işlem tarihi", "tarih/saat", "valör"];
-const DESC_KW   = ["açıklama", "description", "işlem", "işyeri", "merchant", "karşı taraf", "alıcı", "gönderici", "detay"];
-const AMT_KW    = ["tutar", "amount", "borç", "alacak", "miktar", "işlem tutarı", "para"];
-const HDR_TRIGGER = ["işlem tarihi", "işlemler", "sektör", "tarih", "date", "açıklama", "tutar", "amount", "borç", "alacak"];
+// ── Akıllı header dedektörü (kırık encoding dahil) ──────────────────────────
+// HDR_TRIGGER: bu kelimelerden biri satırda geçiyorsa header kabul et
+const HDR_TRIGGER = [
+  "tarih", "tutar", "sekt", "islem", "işlem", "puan", "taksit",
+  "date", "amount", "description",
+];
 
 function detectColumns(rows) {
   for (let i = 0; i < Math.min(25, rows.length); i++) {
     const row = rows[i];
     if (!row) continue;
     const cells = row.map((c) => String(c || "").toLowerCase().trim());
-    // Satırda herhangi bir header kelimesi varsa bu satırı header kabul et
     if (!cells.some((cell) => HDR_TRIGGER.some((k) => cell.includes(k)))) continue;
     let dateCol = -1, descCol = -1, amtCol = -1, sektorCol = -1;
     cells.forEach((cell, idx) => {
-      if (dateCol   === -1 && DATE_KW.some((k) => cell.includes(k))) dateCol   = idx;
-      if (descCol   === -1 && DESC_KW.some((k) => cell.includes(k))) descCol   = idx;
-      if (amtCol    === -1 && AMT_KW.some((k)  => cell.includes(k))) amtCol    = idx;
-      if (sektorCol === -1 && cell.includes("sektör"))               sektorCol = idx;
+      if (dateCol   === -1 && (cell.includes("tarih") || cell.includes("date")))                             dateCol   = idx;
+      if (descCol   === -1 && (cell.includes("islem") || cell.includes("işlem") || cell.includes("lemler"))) descCol   = idx;
+      if (amtCol    === -1 && (cell.includes("tutar") || cell.includes("amount")))                           amtCol    = idx;
+      if (sektorCol === -1 && (cell.includes("sekt")  || cell.includes("ektör") || cell.includes("sector"))) sektorCol = idx;
     });
     return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
   }
   return null; // header bulunamadı
 }
 
-// ── Tutar temizleme: "+1.075,39 TL" → 1075.39 ──────────────────────────────
+// ── Tutar temizleme: "+1.075,39 TL" veya "-663,94 TL" → ±1075.39 ───────────
 function parseTutar(val) {
-  const s = String(val || "")
-    .replace(/TL/gi, "")
+  if (!val) return null;
+  const s = String(val)
+    .replace(/TL/g, "")
     .replace(/\s/g, "")
     .replace(/\+/g, "")
     .replace(/\./g, "")
     .replace(",", ".");
   const n = parseFloat(s);
-  return isNaN(n) || n === 0 ? null : Math.abs(n);
+  return isNaN(n) ? null : n;
 }
 
-const PAYMENT_KW = ["ödeme", "bankacılığı", "havale", "eft", "transfer",
-  "önceki dönem", "minimum tutar", "hesap özeti", "kredi karti ödemesi"];
-const REFUND_KW  = ["iade", "refund", "return", "iptal"];
+// kırık encoding dahil ödeme/transfer filtresi
+const PAYMENT_KW = [
+  "deme-internet", "ödeme", "önceki", "nceki", "zeti borcu",
+  "minimum", "hesap", "havale", "eft", "transfer", "bankacılığı",
+];
+const REFUND_KW  = ["iade", "iptal", "refund"];
 
 // ── Sektöre göre kategori eşleme ────────────────────────────────────────────
 const SEKTOR_MAP = [
@@ -226,13 +230,13 @@ export default function App() {
       for (let i = headerIdx + 1; i < rows.length; i++) {
         const r = rows[i];
         if (!r) continue;
-        const desc = String(r[descCol] || "").trim();
-        const amount = parseTutar(r[amtCol]);
-        if (!desc || amount === null) continue;
+        const desc = descCol >= 0 ? String(r[descCol] || "").trim() : "";
+        const rawAmt = parseTutar(r[amtCol]);
+        if (!desc || rawAmt === null || rawAmt === 0) continue;
         const cleanDesc = desc.toLowerCase();
         if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
         const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
-        parsed.push({ date: String(r[dateCol] || ""), desc, amount, sektor: sektorCol >= 0 ? String(r[sektorCol] || "") : "", refund: isRefund });
+        parsed.push({ date: String(r[dateCol] || ""), desc, amount: Math.abs(rawAmt), sektor: sektorCol >= 0 ? String(r[sektorCol] || "") : "", refund: isRefund });
       }
       return parsed;
     } else {
@@ -250,13 +254,13 @@ export default function App() {
       for (let i = headerIdx + 1; i < rawRows.length; i++) {
         const cols = rawRows[i];
         if (cols.length < 3) continue;
-        const desc = cols[descCol] || "";
-        const amount = parseTutar(cols[amtCol]);
-        if (!desc || amount === null) continue;
+        const desc = descCol >= 0 ? (cols[descCol] || "") : "";
+        const rawAmt = parseTutar(cols[amtCol]);
+        if (!desc || rawAmt === null || rawAmt === 0) continue;
         const cleanDesc = desc.toLowerCase();
         if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
         const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
-        parsed.push({ date: cols[dateCol] || "", desc, amount, sektor: sektorCol >= 0 ? (cols[sektorCol] || "") : "", refund: isRefund });
+        parsed.push({ date: cols[dateCol] || "", desc, amount: Math.abs(rawAmt), sektor: sektorCol >= 0 ? (cols[sektorCol] || "") : "", refund: isRefund });
       }
       return parsed;
     }
