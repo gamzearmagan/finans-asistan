@@ -105,54 +105,6 @@ function getColor(name, cats) {
   return cats.find((c) => c.name === name)?.color || "#888";
 }
 
-// ── Normalize: Türkçe karakter sorunlarını aş ───────────────────────────────
-function normalize(s) {
-  return String(s).toLowerCase()
-    .replace(/i̇/g, "i").replace(/ı/g, "i")
-    .replace(/ö/g, "o").replace(/ü/g, "u")
-    .replace(/ş/g, "s").replace(/ğ/g, "g")
-    .replace(/ç/g, "c");
-}
-
-// ── Akıllı header dedektörü ──────────────────────────────────────────────────
-const HDR_TRIGGER = ["islem tarihi", "tarih", "tutar", "sktor", "islemler", "date", "amount", "description", "puan", "taksit"];
-
-function detectColumns(rows) {
-  for (let i = 0; i < Math.min(30, rows.length); i++) {
-    const row = rows[i];
-    if (!row) continue;
-    const cells = row.map((c) => normalize(String(c || "")).trim());
-    const rowStr = cells.join(" ");
-    if (!HDR_TRIGGER.some((k) => rowStr.includes(k))) continue;
-    let dateCol = -1, descCol = -1, amtCol = -1, sektorCol = -1;
-    cells.forEach((cell, idx) => {
-      if (dateCol   === -1 && (cell.includes("tarih") || cell.includes("date")))                                     dateCol   = idx;
-      if (descCol   === -1 && (cell.includes("islem") || cell.includes("lemler") || cell.includes("description")))   descCol   = idx;
-      if (amtCol    === -1 && (cell.includes("tutar") || cell.includes("amount")))                                   amtCol    = idx;
-      if (sektorCol === -1 && (cell.includes("sekt")  || cell.includes("sektor") || cell.includes("sector")))        sektorCol = idx;
-    });
-    return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
-  }
-  return null;
-}
-
-// ── Tutar temizleme: "+1.075,39 TL" → 1075.39 ───────────────────────────────
-function parseTutar(val) {
-  if (val === null || val === undefined || val === "") return null;
-  const s = String(val)
-    .replace(/TL/gi, "").replace(/₺/g, "")
-    .replace(/\s/g, "").replace(/\+/g, "")
-    .replace(/\./g, "").replace(",", ".");
-  const n = parseFloat(s);
-  return isNaN(n) ? null : Math.abs(n);
-}
-
-// kırık encoding dahil ödeme/transfer filtresi
-const PAYMENT_KW = [
-  "deme-internet", "ödeme", "önceki", "nceki", "zeti borcu",
-  "minimum", "hesap", "havale", "eft", "transfer", "bankacılığı",
-];
-const REFUND_KW  = ["iade", "iptal", "refund"];
 
 // ── Sektöre göre kategori eşleme ────────────────────────────────────────────
 const SEKTOR_MAP = [
@@ -216,66 +168,134 @@ export default function App() {
     setTab("analysis");
   }
 
-  const XLS_MSG = "Eski Excel formatı (.xls) algılandı. Lütfen şu adımları izleyin:\n1. Dosyayı Excel'de açın\n2. Farklı Kaydet → Excel Çalışma Kitabı (.xlsx) seçin\n3. Yeni .xlsx dosyasını buraya yükleyin";
+  const norm = (s) => String(s).toLowerCase()
+    .replace(/İ/g, "i").replace(/ı/g, "i")
+    .replace(/ö/g, "o").replace(/ü/g, "u")
+    .replace(/ş/g, "s").replace(/ğ/g, "g").replace(/ç/g, "c");
 
-  // Tek dosya parse et — rows döner
-  async function parseFileRows(file) {
-    if (file.name.match(/\.xlsx?$/i)) {
-      const isXls = /\.xls$/i.test(file.name);
+  const parseAmount = (val) => {
+    if (val === null || val === undefined || val === "") return null;
+    const s = String(val)
+      .replace(/TL/gi, "").replace(/₺/g, "")
+      .replace(/\s/g, "").replace(/\+/g, "")
+      .replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(s);
+    return isNaN(n) ? null : Math.abs(n);
+  };
+
+  const skipWords  = ["ödeme", "odeme", "havale", "eft", "transfer",
+    "önceki", "onceki", "minimum", "hesap özeti", "borcu", "dönem"];
+  const refundWords = ["iade", "iptal", "refund", "return"];
+
+  function buildRow(desc, dateVal, amount, sektor) {
+    const descLow = desc.toLowerCase();
+    if (skipWords.some((w) => descLow.includes(w))) return null;
+    const refund = refundWords.some((w) => descLow.includes(w));
+    return { date: dateVal, desc, amount, sektor, refund };
+  }
+
+  // ── XLSX/XLS parse ────────────────────────────────────────────────────────
+  async function parseXLSX(file) {
+    try {
       const buf = await file.arrayBuffer();
-      let wb;
-      try {
-        wb = XLSX.read(buf, { type: "array", cellDates: true });
-      } catch {
-        alert(XLS_MSG);
-        return [];
-      }
+      const wb = XLSX.read(buf, { type: "array", raw: false });
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
-      const colResult = detectColumns(rows);
-      if (!colResult) {
-        alert(isXls ? XLS_MSG : "Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
-        return [];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "" });
+
+      console.log("📄 Toplam satır:", rows.length);
+      console.log("📄 İlk 5 satır:", rows.slice(0, 5));
+
+      let headerIdx = -1, dateCol = -1, descCol = -1, amountCol = -1, sectorCol = -1;
+      for (let i = 0; i < Math.min(30, rows.length); i++) {
+        const normed = rows[i].map((c) => norm(c));
+        const hasDate   = normed.findIndex((c) => c.includes("tarih") || c.includes("date"));
+        const hasDesc   = normed.findIndex((c) => c.includes("aciklama") || c.includes("islem") || c.includes("description"));
+        const hasAmount = normed.findIndex((c) => c.includes("tutar") || c.includes("amount") || c.includes("borc"));
+        if (hasDate >= 0 && hasAmount >= 0) {
+          headerIdx = i;
+          dateCol   = hasDate;
+          descCol   = hasDesc >= 0 ? hasDesc : hasDate + 1;
+          amountCol = hasAmount;
+          sectorCol = normed.findIndex((c) => c.includes("sektor") || c.includes("sector"));
+          break;
+        }
       }
-      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = colResult;
+      if (headerIdx === -1) {
+        console.log("⚠️ Header bulunamadı, ilk satır header kabul ediliyor");
+        headerIdx = 0; dateCol = 0; descCol = 1; amountCol = 2;
+      }
+      console.log("🔍 Header:", headerIdx, "| Tarih:", dateCol, "| Açıklama:", descCol, "| Tutar:", amountCol);
+
       const parsed = [];
       for (let i = headerIdx + 1; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r) continue;
-        const desc = descCol >= 0 ? String(r[descCol] || "").trim() : "";
-        const rawAmt = parseTutar(r[amtCol]);
-        if (!desc || rawAmt === null || rawAmt === 0) continue;
-        const cleanDesc = desc.toLowerCase();
-        if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
-        const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
-        parsed.push({ date: String(r[dateCol] || ""), desc, amount: Math.abs(rawAmt), sektor: sektorCol >= 0 ? String(r[sektorCol] || "") : "", refund: isRefund });
+        const row = rows[i];
+        const desc   = String(row[descCol]   || "").trim();
+        const amount = parseAmount(row[amountCol]);
+        if (!desc || !amount || amount <= 0) continue;
+        const sektor = sectorCol >= 0 ? String(row[sectorCol] || "") : "";
+        const entry  = buildRow(desc, String(row[dateCol] || "").trim(), amount, sektor);
+        if (entry) parsed.push(entry);
+      }
+      console.log("✅ Parse edilen işlem:", parsed.length);
+      if (!parsed.length) {
+        alert(/\.xls$/i.test(file.name)
+          ? "Eski Excel formatı (.xls) okundu fakat işlem bulunamadı.\nDosyayı Excel'de .xlsx olarak kaydet ve tekrar yükle."
+          : "Dosyada işlem bulunamadı.");
       }
       return parsed;
-    } else {
+    } catch (err) {
+      console.error("Dosya okuma hatası:", err);
+      alert("Dosya okunamadı: " + err.message);
+      return [];
+    }
+  }
+
+  // ── CSV parse ─────────────────────────────────────────────────────────────
+  async function parseCSV(file) {
+    try {
       const text = await file.text();
-      const lines = text.trim().split("\n").filter(Boolean);
-      const rawRows = lines.map((l) => l.split(/[,;\t]/).map((c) => c.replace(/"/g, "").trim()));
-      const csvResult = detectColumns(rawRows);
-      if (!csvResult) {
-        console.log("Header bulunamadı, ilk 25 satır:", rawRows.slice(0, 25));
-        alert("Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
-        return [];
+      const rawRows = text.trim().split("\n").filter(Boolean)
+        .map((l) => l.split(/[,;\t]/).map((c) => c.replace(/"/g, "").trim()));
+
+      let headerIdx = -1, dateCol = -1, descCol = -1, amountCol = -1, sectorCol = -1;
+      for (let i = 0; i < Math.min(30, rawRows.length); i++) {
+        const normed = rawRows[i].map((c) => norm(c));
+        const hasDate   = normed.findIndex((c) => c.includes("tarih") || c.includes("date"));
+        const hasDesc   = normed.findIndex((c) => c.includes("aciklama") || c.includes("islem") || c.includes("description"));
+        const hasAmount = normed.findIndex((c) => c.includes("tutar") || c.includes("amount") || c.includes("borc"));
+        if (hasDate >= 0 && hasAmount >= 0) {
+          headerIdx = i; dateCol = hasDate;
+          descCol   = hasDesc >= 0 ? hasDesc : hasDate + 1;
+          amountCol = hasAmount;
+          sectorCol = normed.findIndex((c) => c.includes("sektor") || c.includes("sector"));
+          break;
+        }
       }
-      const { headerIdx, dateCol, descCol, amtCol, sektorCol } = csvResult;
+      if (headerIdx === -1) { headerIdx = 0; dateCol = 0; descCol = 1; amountCol = 2; }
+
       const parsed = [];
       for (let i = headerIdx + 1; i < rawRows.length; i++) {
-        const cols = rawRows[i];
+        const cols   = rawRows[i];
         if (cols.length < 3) continue;
-        const desc = descCol >= 0 ? (cols[descCol] || "") : "";
-        const rawAmt = parseTutar(cols[amtCol]);
-        if (!desc || rawAmt === null || rawAmt === 0) continue;
-        const cleanDesc = desc.toLowerCase();
-        if (PAYMENT_KW.some((k) => cleanDesc.includes(k))) continue;
-        const isRefund = REFUND_KW.some((k) => cleanDesc.includes(k));
-        parsed.push({ date: cols[dateCol] || "", desc, amount: Math.abs(rawAmt), sektor: sektorCol >= 0 ? (cols[sektorCol] || "") : "", refund: isRefund });
+        const desc   = String(cols[descCol]   || "").trim();
+        const amount = parseAmount(cols[amountCol]);
+        if (!desc || !amount || amount <= 0) continue;
+        const sektor = sectorCol >= 0 ? String(cols[sectorCol] || "") : "";
+        const entry  = buildRow(desc, String(cols[dateCol] || "").trim(), amount, sektor);
+        if (entry) parsed.push(entry);
       }
+      if (!parsed.length) alert("CSV dosyasında işlem bulunamadı.");
       return parsed;
+    } catch (err) {
+      alert("CSV okunamadı: " + err.message);
+      return [];
     }
+  }
+
+  // ── Router ────────────────────────────────────────────────────────────────
+  async function parseFileRows(file) {
+    if (/\.csv$/i.test(file.name)) return parseCSV(file);
+    return parseXLSX(file);
   }
 
   // Çoklu dosya yükle
