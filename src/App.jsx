@@ -105,42 +105,46 @@ function getColor(name, cats) {
   return cats.find((c) => c.name === name)?.color || "#888";
 }
 
-// ── Akıllı header dedektörü (kırık encoding dahil) ──────────────────────────
-// HDR_TRIGGER: bu kelimelerden biri satırda geçiyorsa header kabul et
-const HDR_TRIGGER = [
-  "tarih", "tutar", "sekt", "islem", "işlem", "puan", "taksit",
-  "date", "amount", "description",
-];
+// ── Normalize: Türkçe karakter sorunlarını aş ───────────────────────────────
+function normalize(s) {
+  return String(s).toLowerCase()
+    .replace(/i̇/g, "i").replace(/ı/g, "i")
+    .replace(/ö/g, "o").replace(/ü/g, "u")
+    .replace(/ş/g, "s").replace(/ğ/g, "g")
+    .replace(/ç/g, "c");
+}
+
+// ── Akıllı header dedektörü ──────────────────────────────────────────────────
+const HDR_TRIGGER = ["islem tarihi", "tarih", "tutar", "sktor", "islemler", "date", "amount", "description", "puan", "taksit"];
 
 function detectColumns(rows) {
-  for (let i = 0; i < Math.min(25, rows.length); i++) {
+  for (let i = 0; i < Math.min(30, rows.length); i++) {
     const row = rows[i];
     if (!row) continue;
-    const cells = row.map((c) => String(c || "").toLowerCase().trim());
-    if (!cells.some((cell) => HDR_TRIGGER.some((k) => cell.includes(k)))) continue;
+    const cells = row.map((c) => normalize(String(c || "")).trim());
+    const rowStr = cells.join(" ");
+    if (!HDR_TRIGGER.some((k) => rowStr.includes(k))) continue;
     let dateCol = -1, descCol = -1, amtCol = -1, sektorCol = -1;
     cells.forEach((cell, idx) => {
-      if (dateCol   === -1 && (cell.includes("tarih") || cell.includes("date")))                             dateCol   = idx;
-      if (descCol   === -1 && (cell.includes("islem") || cell.includes("işlem") || cell.includes("lemler"))) descCol   = idx;
-      if (amtCol    === -1 && (cell.includes("tutar") || cell.includes("amount")))                           amtCol    = idx;
-      if (sektorCol === -1 && (cell.includes("sekt")  || cell.includes("ektör") || cell.includes("sector"))) sektorCol = idx;
+      if (dateCol   === -1 && (cell.includes("tarih") || cell.includes("date")))                                     dateCol   = idx;
+      if (descCol   === -1 && (cell.includes("islem") || cell.includes("lemler") || cell.includes("description")))   descCol   = idx;
+      if (amtCol    === -1 && (cell.includes("tutar") || cell.includes("amount")))                                   amtCol    = idx;
+      if (sektorCol === -1 && (cell.includes("sekt")  || cell.includes("sektor") || cell.includes("sector")))        sektorCol = idx;
     });
     return { headerIdx: i, dateCol, descCol, amtCol, sektorCol };
   }
-  return null; // header bulunamadı
+  return null;
 }
 
-// ── Tutar temizleme: "+1.075,39 TL" veya "-663,94 TL" → ±1075.39 ───────────
+// ── Tutar temizleme: "+1.075,39 TL" → 1075.39 ───────────────────────────────
 function parseTutar(val) {
-  if (!val) return null;
+  if (val === null || val === undefined || val === "") return null;
   const s = String(val)
-    .replace(/TL/g, "")
-    .replace(/\s/g, "")
-    .replace(/\+/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+    .replace(/TL/gi, "").replace(/₺/g, "")
+    .replace(/\s/g, "").replace(/\+/g, "")
+    .replace(/\./g, "").replace(",", ".");
   const n = parseFloat(s);
-  return isNaN(n) ? null : n;
+  return isNaN(n) ? null : Math.abs(n);
 }
 
 // kırık encoding dahil ödeme/transfer filtresi
@@ -212,17 +216,25 @@ export default function App() {
     setTab("analysis");
   }
 
+  const XLS_MSG = "Eski Excel formatı (.xls) algılandı. Lütfen şu adımları izleyin:\n1. Dosyayı Excel'de açın\n2. Farklı Kaydet → Excel Çalışma Kitabı (.xlsx) seçin\n3. Yeni .xlsx dosyasını buraya yükleyin";
+
   // Tek dosya parse et — rows döner
   async function parseFileRows(file) {
     if (file.name.match(/\.xlsx?$/i)) {
+      const isXls = /\.xls$/i.test(file.name);
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      let wb;
+      try {
+        wb = XLSX.read(buf, { type: "array", cellDates: true });
+      } catch {
+        alert(XLS_MSG);
+        return [];
+      }
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
       const colResult = detectColumns(rows);
       if (!colResult) {
-        console.log("Header bulunamadı, ilk 25 satır:", rows.slice(0, 25));
-        alert("Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
+        alert(isXls ? XLS_MSG : "Dosya formatı tanınamadı. Lütfen ilk satırda Tarih, Açıklama, Tutar başlıklarının olduğundan emin olun.");
         return [];
       }
       const { headerIdx, dateCol, descCol, amtCol, sektorCol } = colResult;
