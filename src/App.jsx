@@ -13,16 +13,28 @@ import { Doughnut, Bar } from "react-chartjs-2";
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
 
-// ── Varsayılan kategoriler ──────────────────────────────────────────────────
+// ── Varsayılan kategoriler (öncelik sırası: ilk eşleşen kazanır) ─────────────
 const DEFAULT_CATS = [
   { id: 1, name: "Market / Süpermarket", color: "#1a7a4a", keywords: [
     "migros","bim","a101","carrefour","şok","file","macro","kipa","hakmar","sok","bizim toptan","tarım kredi",
-    "market","süpermarket","manav","kasap","bakkal","kuruyemiş","şarküteri","hipermarket","alışveriş merkezi",
+    "market","süpermarket","manav","kasap","bakkal","kuruyemiş","şarküteri","hipermarket",
   ]},
   { id: 2, name: "Yemek & Restoran", color: "#e07b00", keywords: [
     "mcdonalds","burger king","kfc","dominos","pizza hut","popeyes","subway","starbucks","caribou","gloria jeans","dunkin","simit sarayi",
     "restoran","cafe","kafeterya","yemek","kebap","köfte","döner","pide","lahmacun","iskender","çiğköfte","tantuni","izgara","mangal",
     "pizza","burger","tavuk","balık","lokanta","büfe","pastane","fırın","börek","kokoreç","dürüm","çorba","kahvaltı","brunch","kahve",
+  ]},
+  { id: 6, name: "Sağlık", color: "#0891b2", keywords: [
+    "eczane","medical park","acibadem","memorial","liv hospital",
+    "hastane","klinik","poliklinik","medikal","optik","gözlük","diş","laboratuvar","tahlil","röntgen",
+    "muayene","doktor","diyetisyen","fizyoterapi","psikoloji","veteriner","eczacı","ilaç","vitamin","takviye",
+  ]},
+  { id: 4, name: "Fatura & Abonelik", color: "#9b3ab5", keywords: [
+    "netflix","spotify","youtube premium","apple.com","apple subscr","icloud",
+    "amazon prime","exxen","blutv","gain","tabii","tod","tivibu","bein",
+    "turkcell","vodafone","türk telekom","superonline","ttnet",
+    "elektrik","doğalgaz","su faturası","internet fatura",
+    "dask","kasko","sigorta",
   ]},
   { id: 3, name: "Ulaşım", color: "#3266ad", keywords: [
     "uber","careem","bitaksi","martı","bolt","thy","pegasus","sunexpress","anadolujet","havas",
@@ -31,21 +43,12 @@ const DEFAULT_CATS = [
     "rent a car","otobüs bileti","uçak bileti","tren bileti",
     "istanbul kart","istanbulkart","akbil yükleme","hgs","ogs",
   ]},
-  { id: 4, name: "Fatura & Abonelik", color: "#9b3ab5", keywords: [
-    "netflix","spotify","youtube","apple","google","microsoft","amazon","exxen","blutv","gain","tabii","tod","tivibu",
-    "turkcell","vodafone","türk telekom","superonline","ttnet","bein",
-    "fatura","abonelik","aidat","elektrik","doğalgaz","su fatura","internet","telefon","kira","sigorta",
-    "vergi","kasko","trafik sigortası","dask","bireysel emeklilik","bes","taksit",
-  ]},
   { id: 5, name: "Giyim & Alışveriş", color: "#c0392b", keywords: [
-    "zara","h&m","hm","koton","lcw","mango","vakko","beymen","nike","adidas","puma","reebok","columbia","mavi","lee","wrangler","trendyol","hepsiburada",
+    "zara","h&m","hm","koton","lcw","mango","vakko","beymen","nike","adidas","puma","reebok","columbia","mavi","lee","wrangler",
+    "trendyol","hepsiburada","amazon","n11","gittigidiyor","ciceksepeti","morhipo","boyner",
+    "watsons","gratis","apple store","mediamarkt","teknosa","vatan","bimeks",
     "giyim","tekstil","konfeksiyon","butik","moda","ayakkabı","çanta","aksesuar","takı","kıyafet","elbise","pantolon","gömlek",
     "mont","ceket","spor giyim","iç giyim","çocuk giyim",
-  ]},
-  { id: 6, name: "Sağlık", color: "#0891b2", keywords: [
-    "eczane","medical park","acibadem","memorial","liv hospital",
-    "hastane","klinik","poliklinik","medikal","optik","gözlük","diş","laboratuvar","tahlil","röntgen",
-    "muayene","doktor","diyetisyen","fizyoterapi","psikoloji","veteriner","eczacı","ilaç","vitamin","takviye",
   ]},
   { id: 7, name: "Eğlence & Kültür", color: "#d97706", keywords: [
     "cinemaximum","cineplex","biletix","passo","steam","playstation",
